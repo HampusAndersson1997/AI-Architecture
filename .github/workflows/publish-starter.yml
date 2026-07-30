@@ -29,25 +29,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .publish/part-*.b64 | base64 --decode > /tmp/understand-anything-chatgpt-cloud-starter.zip
-          echo "22e10f67df1b03d9894dbb33469e609cd51e4c906a2a81b467f5e1fcfb9eebda  /tmp/understand-anything-chatgpt-cloud-starter.zip" | sha256sum --check --strict
+          cat .publish/part-*.b64 | base64 --decode > /tmp/understand-anything-chatgpt-cloud-starter.tar.xz
+          echo "da6d97dcfadc93e75adc8d8bdff491f6c2f99f364ca0dda7fcde0488077e6f3b  /tmp/understand-anything-chatgpt-cloud-starter.tar.xz" | sha256sum --check --strict
 
       - name: Expand starter safely
         shell: python
         run: |
-          from pathlib import Path
-          from zipfile import ZipFile
+          from pathlib import Path, PurePosixPath
+          import tarfile
 
-          archive = Path('/tmp/understand-anything-chatgpt-cloud-starter.zip')
+          archive = Path('/tmp/understand-anything-chatgpt-cloud-starter.tar.xz')
           destination = Path('understand-anything-chatgpt-cloud-starter').resolve()
           destination.mkdir(parents=True, exist_ok=True)
 
-          with ZipFile(archive) as bundle:
-              for member in bundle.infolist():
-                  target = (destination / member.filename).resolve()
-                  if destination not in target.parents and target != destination:
-                      raise SystemExit(f'Unsafe archive path: {member.filename}')
-              bundle.extractall(destination)
+          with tarfile.open(archive, mode='r:xz') as bundle:
+              for member in bundle.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts:
+                      raise SystemExit(f'Unsafe archive path: {member.name}')
+                  if member.issym() or member.islnk():
+                      raise SystemExit(f'Archive link rejected: {member.name}')
+              bundle.extractall(destination, filter='data')
 
       - name: Remove one-shot publishing files
         shell: bash
