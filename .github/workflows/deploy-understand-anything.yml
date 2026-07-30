@@ -1,0 +1,187 @@
+name: Deploy Understand Anything
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-understand-anything-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STARTER_DIR: understand-anything-chatgpt-cloud-starter
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+      UA_API_KEY: ${{ secrets.UA_API_KEY }}
+      UA_GITHUB_TOKEN: ${{ secrets.UA_GITHUB_TOKEN }}
+      UA_ANALYZER_CALLBACK_TOKEN: ${{ secrets.UA_ANALYZER_CALLBACK_TOKEN }}
+      UA_DASHBOARD_TOKEN_SECRET: ${{ secrets.UA_DASHBOARD_TOKEN_SECRET }}
+      UA_UPLOAD_TOKEN_SECRET: ${{ secrets.UA_UPLOAD_TOKEN_SECRET }}
+      UA_SOURCE_DOWNLOAD_TOKEN_SECRET: ${{ secrets.UA_SOURCE_DOWNLOAD_TOKEN_SECRET }}
+      UA_API_ORIGIN: ${{ vars.UA_API_ORIGIN }}
+      UA_DASHBOARD_ORIGIN: ${{ vars.UA_DASHBOARD_ORIGIN }}
+      UA_PAGES_PROJECT: ${{ vars.UA_PAGES_PROJECT }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_D1_DATABASE_ID
+            UA_API_KEY UA_GITHUB_TOKEN UA_ANALYZER_CALLBACK_TOKEN
+            UA_DASHBOARD_TOKEN_SECRET UA_UPLOAD_TOKEN_SECRET UA_SOURCE_DOWNLOAD_TOKEN_SECRET
+            UA_API_ORIGIN UA_DASHBOARD_ORIGIN UA_PAGES_PROJECT
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub secret or variable: ${name}" >&2
+              exit 2
+            fi
+          done
+
+      - name: Verify deployment-critical code
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$STARTER_DIR"
+          python3 -m compileall -q analyzer/src scripts/render-deployment.py scripts/publish-results.py
+          while IFS= read -r file; do node --check "$file"; done < <(find packages/api/src packages/dashboard/src -type f -name '*.js' -print | sort)
+          python3 scripts/render-deployment.py --help >/dev/null
+          temp_source="$(mktemp -d)"
+          temp_output="$(mktemp -d)"
+          printf 'def health():\n    return "ok"\n' > "$temp_source/main.py"
+          PYTHONPATH=analyzer/src python3 -m ua_analyzer analyze \
+            --source "$temp_source" \
+            --output "$temp_output" \
+            --project-id deployment-smoke \
+            --source-version 0000000000000000000000000000000000000000
+          test -s "$temp_output/knowledge-graph.json"
+
+      - name: Render ephemeral deployment files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$STARTER_DIR"
+          python3 scripts/render-deployment.py \
+            --wrangler-input wrangler.toml \
+            --wrangler-output "$RUNNER_TEMP/wrangler.toml" \
+            --dashboard-input packages/dashboard \
+            --dashboard-output "$RUNNER_TEMP/dashboard" \
+            --database-id "$CLOUDFLARE_D1_DATABASE_ID" \
+            --api-origin "$UA_API_ORIGIN" \
+            --dashboard-origin "$UA_DASHBOARD_ORIGIN" \
+            --analyzer-repository "$GITHUB_REPOSITORY" \
+            --analyzer-workflow-ref main
+          python3 - "$RUNNER_TEMP/worker-secrets.json" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          names = {
+              "API_KEY": "UA_API_KEY",
+              "GITHUB_TOKEN": "UA_GITHUB_TOKEN",
+              "ANALYZER_CALLBACK_TOKEN": "UA_ANALYZER_CALLBACK_TOKEN",
+              "DASHBOARD_TOKEN_SECRET": "UA_DASHBOARD_TOKEN_SECRET",
+              "UPLOAD_TOKEN_SECRET": "UA_UPLOAD_TOKEN_SECRET",
+              "SOURCE_DOWNLOAD_TOKEN_SECRET": "UA_SOURCE_DOWNLOAD_TOKEN_SECRET",
+          }
+          output = Path(sys.argv[1])
+          output.write_text(json.dumps({target: os.environ[source] for target, source in names.items()}), encoding="utf-8")
+          output.chmod(0o600)
+          PY
+
+      - name: Ensure R2 bucket exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          buckets="$(npx --yes wrangler@latest r2 bucket list --json)"
+          if ! BUCKETS_JSON="$buckets" python3 - <<'PY'
+          import json
+          import os
+          buckets = json.loads(os.environ["BUCKETS_JSON"])
+          names = {item.get("name") for item in buckets}
+          raise SystemExit(0 if "understand-anything-artifacts" in names else 1)
+          PY
+          then
+            npx --yes wrangler@latest r2 bucket create understand-anything-artifacts
+          fi
+
+      - name: Apply D1 migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$STARTER_DIR"
+          npx --yes wrangler@latest d1 migrations apply understand-anything \
+            --remote --config "$RUNNER_TEMP/wrangler.toml"
+
+      - name: Deploy Worker with secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$STARTER_DIR"
+          npx --yes wrangler@latest deploy \
+            --config "$RUNNER_TEMP/wrangler.toml" \
+            --secrets-file "$RUNNER_TEMP/worker-secrets.json"
+
+      - name: Ensure Pages project exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects="$(npx --yes wrangler@latest pages project list --json)"
+          if ! PROJECTS_JSON="$projects" python3 - "$UA_PAGES_PROJECT" <<'PY'
+          import json
+          import os
+          import sys
+          expected = sys.argv[1]
+          projects = json.loads(os.environ["PROJECTS_JSON"])
+          names = {item.get("name") or item.get("project_name") for item in projects}
+          raise SystemExit(0 if expected in names else 1)
+          PY
+          then
+            npx --yes wrangler@latest pages project create "$UA_PAGES_PROJECT" --production-branch main
+          fi
+
+      - name: Deploy dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@latest pages deploy "$RUNNER_TEMP/dashboard" \
+            --project-name "$UA_PAGES_PROJECT" \
+            --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-message "Deploy Understand Anything dashboard"
+
+      - name: Smoke test Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$UA_API_ORIGIN/health")"
+          [[ "$response" == '{"status":"ok"}' ]]
+
+      - name: Remove ephemeral secrets
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/worker-secrets.json"
