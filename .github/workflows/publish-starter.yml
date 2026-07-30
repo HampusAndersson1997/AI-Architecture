@@ -1,0 +1,71 @@
+name: Publish Understand Anything ChatGPT cloud starter
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .publish/READY
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-understand-anything-chatgpt-cloud-starter
+  cancel-in-progress: false
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Reconstruct and verify archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .publish/part-*.b64 | base64 --decode > /tmp/understand-anything-chatgpt-cloud-starter.tar.xz
+          echo "4c51596697a31bc52af843a9a9ac3a8aa965a476166a6f3813a91246770ae59b  /tmp/understand-anything-chatgpt-cloud-starter.tar.xz" | sha256sum --check --strict
+
+      - name: Expand starter safely
+        shell: python
+        run: |
+          from pathlib import Path, PurePosixPath
+          import tarfile
+
+          archive = Path('/tmp/understand-anything-chatgpt-cloud-starter.tar.xz')
+          destination = Path('understand-anything-chatgpt-cloud-starter').resolve()
+          destination.mkdir(parents=True, exist_ok=True)
+
+          with tarfile.open(archive, mode='r:xz') as bundle:
+              for member in bundle.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts:
+                      raise SystemExit(f'Unsafe archive path: {member.name}')
+                  if member.issym() or member.islnk():
+                      raise SystemExit(f'Archive link rejected: {member.name}')
+              bundle.extractall(destination, filter='data')
+
+      - name: Remove one-shot publishing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .publish
+          rm -f .github/workflows/publish-starter.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+
+      - name: Commit expanded starter
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: expand Understand Anything ChatGPT cloud starter"
+          git push origin HEAD:main
