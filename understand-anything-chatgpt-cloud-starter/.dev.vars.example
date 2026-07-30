@@ -1,0 +1,6 @@
+API_KEY=dev-api-key-change-me-32-characters
+GITHUB_TOKEN=github-token-with-actions-permission
+ANALYZER_CALLBACK_TOKEN=callback-secret-change-me-32-chars
+DASHBOARD_TOKEN_SECRET=dashboard-secret-change-me-32-chars
+UPLOAD_TOKEN_SECRET=upload-secret-change-me-32-characters
+SOURCE_DOWNLOAD_TOKEN_SECRET=source-download-change-me-32-chars

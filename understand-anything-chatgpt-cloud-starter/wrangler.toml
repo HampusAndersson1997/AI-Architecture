@@ -1,0 +1,23 @@
+name = "understand-anything-api"
+main = "packages/api/src/worker.js"
+compatibility_date = "2026-07-30"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "understand-anything"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "ARTIFACTS"
+bucket_name = "understand-anything-artifacts"
+
+[vars]
+OWNER_ID = "single-user"
+API_ORIGIN = "https://ua-api.example.workers.dev"
+DASHBOARD_ORIGIN = "https://ua-dashboard.pages.dev"
+GITHUB_API_VERSION = "2022-11-28"
+ANALYZER_REPOSITORY = "your-github-user/understand-anything-chatgpt-cloud-starter"
+ANALYZER_WORKFLOW = "analyze.yml"
+ANALYZER_WORKFLOW_REF = "main"
+MAX_UPLOAD_BYTES = "104857600"

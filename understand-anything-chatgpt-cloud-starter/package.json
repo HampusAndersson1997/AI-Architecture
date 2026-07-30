@@ -1,0 +1,18 @@
+{
+  "name": "understand-anything-chatgpt-cloud-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:api": "node --test packages/api/test/*.test.js",
+    "test:dashboard": "node --test packages/dashboard/test/*.test.js",
+    "test:workflow": "python3 -m unittest tests.test_workflow_contract -v",
+    "test:analyzer": "PYTHONPATH=analyzer/src python3 -m unittest discover analyzer/tests -v",
+    "test": "npm run test:api && npm run test:dashboard && npm run test:analyzer && npm run test:workflow && npm run test:docs",
+    "verify": "bash scripts/verify.sh",
+    "test:docs": "python3 -m unittest tests.test_docs_contract -v"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

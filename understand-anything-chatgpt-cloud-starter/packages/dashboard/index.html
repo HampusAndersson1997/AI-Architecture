@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ua-api-origin" content="">
+  <title>Understand Anything</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Understand Anything</p>
+      <h1 id="title">Project graph</h1>
+      <p id="subtitle">Loading durable project state…</p>
+      <p id="stats"></p>
+    </div>
+    <label class="search"><span>Search graph</span><input id="search-input" type="search" placeholder="File, function, tag, or concept"></label>
+    <section class="diff-controls" aria-label="Compare graph versions">
+      <label><span>Base version</span><input id="diff-base" type="text" placeholder="Commit SHA or upload digest"></label>
+      <label><span>Head version</span><input id="diff-head" type="text" placeholder="Commit SHA or upload digest"></label>
+      <button id="diff-button" type="button">Apply diff</button>
+      <span id="diff-status" aria-live="polite"></span>
+    </section>
+  </header>
+  <div id="warning-banner" class="banner" hidden></div>
+  <nav class="tabs" aria-label="Graph views">
+    <button data-view="graph" aria-pressed="true">Structural graph</button>
+    <button data-view="layers" aria-pressed="false">Layers</button>
+    <button data-view="tour" aria-pressed="false">Guided tour</button>
+    <button data-view="domain" aria-pressed="false">Domain view</button>
+  </nav>
+  <main class="layout">
+    <section class="workspace">
+      <div id="graph-view" class="graph-view"></div>
+      <div id="layers-view" class="cards" hidden></div>
+      <div id="tour-view" class="cards" hidden></div>
+      <div id="domain-view" class="cards" hidden></div>
+    </section>
+    <aside id="node-details" class="details" aria-live="polite"></aside>
+  </main>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

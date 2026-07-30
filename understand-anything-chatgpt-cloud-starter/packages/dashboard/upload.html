@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload project ZIP</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <main class="upload-shell">
+    <section class="card upload-card">
+      <p class="eyebrow">Understand Anything</p>
+      <h1>Upload project ZIP</h1>
+      <p id="upload-project"></p>
+      <form id="upload-form">
+        <label class="search"><span>ZIP archive</span><input id="upload-file" type="file" accept=".zip,application/zip" required></label>
+        <button id="upload-button" type="submit">Upload securely</button>
+      </form>
+      <p id="upload-status" aria-live="polite">The archive is sent directly to the authenticated Worker URL. Repository scripts are not executed.</p>
+    </section>
+  </main>
+  <script type="module" src="/src/upload.js"></script>
+</body>
+</html>

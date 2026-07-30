@@ -1,0 +1,62 @@
+{
+  "package": "understand-anything-chatgpt-skill",
+  "version": "0.1.0-design",
+  "generated_date": "2026-07-30",
+  "files": [
+    {
+      "path": "NOTICE.md",
+      "bytes": 406,
+      "sha256": "162892f14858fa3cfcdb4654ee4eef9455b71d0082f9a4aceefb61dde7a5fc86"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2603,
+      "sha256": "7234b889387e65e14970c1545b924e6fe10f8930e23cb13db954ca467dccfc0d"
+    },
+    {
+      "path": "SKILL.md",
+      "bytes": 3584,
+      "sha256": "182e2075697d96212a87a3a3a2deadf1c4e00b3f49d62ed5d68b8ba892a00688"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-07-30-understand-anything-chatgpt-design.md",
+      "bytes": 6746,
+      "sha256": "c5a8910ac8aa6e485d192ee990818d9f2ec1e79c81f12c28a34145d53e3d9645"
+    },
+    {
+      "path": "references/cloud-architecture.md",
+      "bytes": 4696,
+      "sha256": "352a9d45f059638dcee114776e0666eadf9a4a5f44af43d61b2d7d8a0af44e2b"
+    },
+    {
+      "path": "references/custom-gpt-instructions.md",
+      "bytes": 4340,
+      "sha256": "adf0978bd6854db9ea6d5c6a1091eae58f2984ce9695f2f4c63156111fdb1678"
+    },
+    {
+      "path": "references/openapi.yaml",
+      "bytes": 14037,
+      "sha256": "8ea54c1461b5b372194a2d5ef7d30715a245248913dbfe4724d3990841871c1c"
+    },
+    {
+      "path": "references/security.md",
+      "bytes": 2688,
+      "sha256": "c89ef2bc35704c0b5b69b22940554bb40afd93c0dac6e0d0bb5326ec7518fb50"
+    },
+    {
+      "path": "tests/acceptance-scenarios.md",
+      "bytes": 3832,
+      "sha256": "360264958351dd7f780724c4572d6cc76473213f21084e7d926216d3c4700a38"
+    },
+    {
+      "path": "tests/verification-report.txt",
+      "bytes": 548,
+      "sha256": "4c4027e83d6b8bd978dec373d8b073c4b38f67c662b9f05be7c836a112247a7d"
+    },
+    {
+      "path": "tests/verify_package.py",
+      "bytes": 3472,
+      "sha256": "90355f3889f3a61c641b9d10e4059b0a2286e2db3d1c5fd54afa070210af784f"
+    }
+  ]
+}
