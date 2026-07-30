@@ -1,157 +1,144 @@
 # Deployment Guide
 
-## 1. Verify locally
+This starter is published inside `HampusAndersson1997/AI-Architecture` under `understand-anything-chatgpt-cloud-starter/`. GitHub-executable workflows are therefore installed at the repository root:
 
-```bash
-bash scripts/verify.sh
-```
+- `.github/workflows/analyze.yml`
+- `.github/workflows/deploy-understand-anything.yml`
 
-The command must exit with status 0 before deployment.
+## 1. Create Cloudflare resources
 
-## 2. Push the starter to GitHub
-
-Create a private repository and push this branch. The repository hosts the analyzer workflow.
-
-```bash
-git remote add origin git@github.com:YOUR_GITHUB_USER/understand-anything-chatgpt-cloud-starter.git
-git push -u origin feat/cloud-starter
-```
-
-Merge the branch to `main` after review because the Worker dispatches the workflow from `main` by default.
-
-## 3. Create Cloudflare resources
-
-Authenticate Wrangler:
+Authenticate Wrangler from a trusted local machine:
 
 ```bash
 npx wrangler@latest login
 ```
 
-Create D1 and R2:
+Create the D1 database and R2 bucket:
 
 ```bash
 npx wrangler@latest d1 create understand-anything
 npx wrangler@latest r2 bucket create understand-anything-artifacts
 ```
 
-Copy the D1 UUID printed by the first command into `wrangler.toml` as `database_id`.
+Record the D1 database UUID returned by the first command. The deployment workflow checks for the R2 bucket and creates it when absent, but creating it explicitly makes the initial setup easier to verify.
 
-Set these values in `wrangler.toml`:
+Create a Pages project name, normally `ua-dashboard`. The deployment workflow creates the Pages project when it does not already exist.
 
-```toml
-API_ORIGIN = "https://YOUR_WORKER_SUBDOMAIN.workers.dev"
-DASHBOARD_ORIGIN = "https://YOUR_PAGES_SUBDOMAIN.pages.dev"
-ANALYZER_REPOSITORY = "YOUR_GITHUB_USER/understand-anything-chatgpt-cloud-starter"
-ANALYZER_WORKFLOW_REF = "main"
+## 2. Choose production origins
+
+Choose the final origins before running deployment:
+
+```text
+Worker:    https://understand-anything-api.<account-subdomain>.workers.dev
+Dashboard: https://ua-dashboard.pages.dev
 ```
 
-Apply the migration:
+The values must be plain HTTPS origins without paths, query strings, credentials, or fragments.
 
-```bash
-npx wrangler@latest d1 migrations apply understand-anything --remote
-```
+## 3. Generate application secrets
 
-## 4. Generate secrets
-
-Generate five independent application secrets. Keep each value at least 32 random bytes. GitHub access tokens are created separately with scoped permissions.
+Generate independent values of at least 32 random bytes:
 
 ```bash
 python3 - <<'PY'
 import secrets
 for name in (
-    "API_KEY",
-    "ANALYZER_CALLBACK_TOKEN",
-    "DASHBOARD_TOKEN_SECRET",
-    "UPLOAD_TOKEN_SECRET",
-    "SOURCE_DOWNLOAD_TOKEN_SECRET",
+    "UA_API_KEY",
+    "UA_ANALYZER_CALLBACK_TOKEN",
+    "UA_DASHBOARD_TOKEN_SECRET",
+    "UA_UPLOAD_TOKEN_SECRET",
+    "UA_SOURCE_DOWNLOAD_TOKEN_SECRET",
 ):
     print(f"{name}={secrets.token_urlsafe(32)}")
 PY
 ```
 
-Create a fine-grained GitHub token for the Worker with:
+Create a fine-grained GitHub token for `UA_GITHUB_TOKEN` with only the access required to:
 
-- Read access to repository metadata and commits for source repositories
-- Actions write access to the analyzer repository
+- read repository metadata and commits for source repositories;
+- dispatch Actions workflows in `HampusAndersson1997/AI-Architecture`.
 
-Store Worker secrets:
+For private source repositories, create a separate read-only token for `SOURCE_REPOSITORY_TOKEN`.
 
-```bash
-npx wrangler@latest secret put API_KEY
-npx wrangler@latest secret put GITHUB_TOKEN
-npx wrangler@latest secret put ANALYZER_CALLBACK_TOKEN
-npx wrangler@latest secret put DASHBOARD_TOKEN_SECRET
-npx wrangler@latest secret put UPLOAD_TOKEN_SECRET
-npx wrangler@latest secret put SOURCE_DOWNLOAD_TOKEN_SECRET
-```
+## 4. Configure GitHub Actions secrets
 
-## 5. Configure GitHub Actions secrets
+Open:
 
-In the analyzer repository, open **Settings → Secrets and variables → Actions**.
+**AI-Architecture → Settings → Secrets and variables → Actions → Secrets**
 
-Create:
+Create these repository secrets:
 
-- `ANALYZER_CALLBACK_TOKEN`: exactly the same value stored in the Worker
-- `SOURCE_REPOSITORY_TOKEN`: a fine-grained token that can read the private source repositories you intend to analyze
+| Secret | Purpose |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare token with Workers Scripts, D1, R2, and Pages edit access |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account identifier |
+| `CLOUDFLARE_D1_DATABASE_ID` | UUID returned by `wrangler d1 create` |
+| `UA_API_KEY` | Bearer key used by the private Custom GPT Action |
+| `UA_GITHUB_TOKEN` | Token used by the Worker to resolve commits and dispatch `analyze.yml` |
+| `UA_ANALYZER_CALLBACK_TOKEN` | Secret shared between Worker and analyzer workflow |
+| `ANALYZER_CALLBACK_TOKEN` | Exactly the same value as `UA_ANALYZER_CALLBACK_TOKEN` |
+| `UA_DASHBOARD_TOKEN_SECRET` | Signing secret for expiring dashboard capabilities |
+| `UA_UPLOAD_TOKEN_SECRET` | Signing secret for upload capabilities |
+| `UA_SOURCE_DOWNLOAD_TOKEN_SECRET` | Signing secret for analyzer download capabilities |
+| `SOURCE_REPOSITORY_TOKEN` | Optional read-only token for private source repositories |
 
-For public-only analysis, `SOURCE_REPOSITORY_TOKEN` may be omitted.
+GitHub reserves the automatic `GITHUB_TOKEN` name. The Worker therefore uses the separate `UA_GITHUB_TOKEN` secret.
 
-Do not put the callback token in workflow inputs. The workflow reads it only from the GitHub secret store.
+## 5. Configure GitHub Actions variables
 
-## 6. Deploy the Worker
+In the same settings area, open **Variables** and create:
 
-```bash
-npx wrangler@latest deploy
-```
+| Variable | Example |
+|---|---|
+| `UA_API_ORIGIN` | `https://understand-anything-api.<account-subdomain>.workers.dev` |
+| `UA_DASHBOARD_ORIGIN` | `https://ua-dashboard.pages.dev` |
+| `UA_PAGES_PROJECT` | `ua-dashboard` |
 
-Confirm:
+## 6. Run deployment
 
-```bash
-curl https://YOUR_WORKER_SUBDOMAIN.workers.dev/health
-```
+Open:
 
-Expected response:
+**Actions → Deploy Understand Anything → Run workflow**
 
-```json
-{"status":"ok"}
-```
+The workflow performs these gates in order:
 
-Update the `servers[0].url` value in `openapi.yaml` to the real Worker URL.
+1. validates every required secret and variable;
+2. compiles Python modules and checks JavaScript syntax;
+3. runs a deterministic analyzer smoke test;
+4. renders an ephemeral Wrangler configuration and dashboard copy;
+5. checks or creates the R2 bucket;
+6. applies D1 migrations;
+7. deploys the Worker with an ephemeral mode-`0600` secrets file;
+8. checks or creates the Pages project;
+9. deploys the dashboard;
+10. verifies `GET /health` returns `{"status":"ok"}`;
+11. removes the temporary secrets file in an `always()` cleanup step.
 
-## 7. Deploy the dashboard to Pages
+Generated configuration and secrets are never committed to the repository.
 
-Create and deploy one static Pages project:
+## 7. Configure the Custom GPT
 
-```bash
-npx wrangler@latest pages project create ua-dashboard --production-branch main
-npx wrangler@latest pages deploy packages/dashboard --project-name ua-dashboard
-```
+After deployment succeeds:
 
-Set the exact assigned Pages origin in `wrangler.toml` as `DASHBOARD_ORIGIN`, then redeploy the Worker.
+1. Replace `servers[0].url` in `openapi.yaml` with `UA_API_ORIGIN` before importing the schema into the Custom GPT.
+2. Follow [custom-gpt.md](custom-gpt.md).
+3. Configure Action authentication with the exact `UA_API_KEY` value.
 
-Set the Worker origin in `packages/dashboard/index.html`:
-
-```html
-<meta name="ua-api-origin" content="https://YOUR_WORKER_SUBDOMAIN.workers.dev">
-```
-
-Deploy Pages again after editing the meta tag.
-
-## 8. Configure the Custom GPT
-
-Follow [custom-gpt.md](custom-gpt.md).
-
-## 9. Smoke test
+## 8. End-to-end smoke test
 
 1. Create a project from a small public GitHub repository.
 2. Start `full` analysis.
 3. Poll the returned job ID until `completed`.
-4. Search for an entry-point term.
-5. Ask one graph question and confirm evidence is returned.
+4. Confirm the reported source version is an immutable commit SHA.
+5. Search for an entry-point term and inspect evidence.
 6. Create dashboard access and open the expiring URL.
-7. Create a ZIP upload session, open `upload_page_url`, upload a safe test ZIP, and analyze its project ID.
-8. Confirm an invalid graph callback fails and leaves the job in `failed` state using the automated tests rather than a production callback.
+7. Create a ZIP upload session and analyze a safe test archive.
+8. Confirm the dashboard graph, layers, tour, domain grouping, and version comparison load.
 
-## Free-tier safety
+## Security and free-tier controls
 
-The system has no paid-provider fallback. Cloudflare or GitHub quota errors surface as failures. Configure billing alerts and avoid enabling automatic paid overages. GitHub Actions concurrency is keyed by project, source version, and mode to prevent accidental duplicate runs.
+- Repository contents are treated as untrusted data and are never executed by the analyzer.
+- Private source code is not sent to optional inference providers by default.
+- Deployment fails closed when secrets, origins, graph validation, or Cloudflare operations fail.
+- There is no paid-provider fallback. Configure Cloudflare billing alerts and do not enable automatic paid overages.
+- GitHub Actions concurrency prevents duplicate analyzer and production deployment runs from overlapping.
