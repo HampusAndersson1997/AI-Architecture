@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: Understand Anything API
+  version: 0.1.0
+  description: Persistent repository analysis and knowledge-graph service for a private Custom GPT.
+servers:
+  - url: https://ua-api.example.workers.dev
+security:
+  - bearerAuth: []
+paths:
+  /v1/projects/github:
+    post:
+      operationId: createProjectFromGitHub
+      summary: Create or reuse a project from a GitHub repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repository_url]
+              properties:
+                repository_url: { type: string, format: uri }
+                ref: { type: string }
+                output_language: { type: string, default: en }
+                exclusions:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: Project resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectResolution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /v1/uploads:
+    post:
+      operationId: createUploadSession
+      summary: Create an expiring ZIP upload session and browser upload page
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename]
+              properties:
+                filename: { type: string, example: project.zip }
+                expected_size_bytes: { type: integer, minimum: 1 }
+                output_language: { type: string, default: en }
+      responses:
+        '200':
+          description: Upload session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/analyses:
+    post:
+      operationId: startAnalysis
+      summary: Start or reuse an idempotent analysis job
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [full, incremental, review] }
+                source_ref: { type: string, description: Optional immutable source version; when supplied it must equal the durable project sourceVersion. }
+                enable_optional_enrichment: { type: boolean, default: false }
+                private_code_enrichment_consent: { type: boolean, default: false }
+      responses:
+        '202':
+          description: Job queued or reused; review mode may return an already completed or failed deterministic validation job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/jobs/{jobId}:
+    get:
+      operationId: getJobStatus
+      summary: Read exact analysis status and progress
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Read durable project and latest graph state
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      responses:
+        '200':
+          description: Project state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/projects/{projectId}/search:
+    get:
+      operationId: searchProject
+      summary: Search graph nodes by name, path, summary, and tags
+      parameters:
+        - { $ref: '#/components/parameters/ProjectId' }
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/projects/{projectId}/query:
+    post:
+      operationId: queryProject
+      summary: Answer a project question from graph evidence
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Evidence-backed answer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueryResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/projects/{projectId}/compare:
+    post:
+      operationId: compareProjectCommits
+      summary: Compare two persisted graph versions
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_ref, head_ref]
+              properties:
+                base_ref: { type: string }
+                head_ref: { type: string }
+      responses:
+        '200':
+          description: Graph impact comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompareResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/projects/{projectId}/dashboard-access:
+    post:
+      operationId: createDashboardAccess
+      summary: Create a 15-minute private dashboard link
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      responses:
+        '200':
+          description: Expiring dashboard access
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project_id, dashboard_url, expires_at]
+                properties:
+                  project_id: { type: string }
+                  dashboard_url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ValidationError:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: Source or requested mode is not ready
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  schemas:
+    ProjectResolution:
+      type: object
+      required: [status, project]
+      properties:
+        status: { type: string, enum: [ready, authorization_required] }
+        project: { $ref: '#/components/schemas/Project' }
+        authorization_url: { type: string, format: uri }
+        message: { type: string }
+    Project:
+      type: object
+      required: [id, sourceType, sourceIdentity, sourceVersion, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        sourceType: { type: string, enum: [github, upload] }
+        sourceIdentity: { type: string }
+        sourceVersion: { type: string }
+        status: { type: string, enum: [pending, ready, analyzing, failed] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        latestGraphKey: { type: string, nullable: true }
+        latestGraphDigest: { type: string, nullable: true }
+        dashboardUrl: { type: string, format: uri, nullable: true }
+    Job:
+      type: object
+      required: [id, projectId, sourceVersion, mode, status, phase, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        sourceVersion: { type: string }
+        mode: { type: string, enum: [full, incremental, review] }
+        status: { type: string, enum: [queued, running, failed, completed] }
+        phase: { type: string, enum: [preflight, scan, batch, analyze, assemble, architecture, tour, validate, save, complete] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        error: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    UploadSession:
+      type: object
+      required: [upload_id, project_id, upload_url, upload_page_url, expires_at, status]
+      properties:
+        upload_id: { type: string }
+        project_id: { type: string }
+        upload_url: { type: string, format: uri }
+        upload_page_url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+        status: { type: string, enum: [pending, ready, expired, rejected] }
+        constraints: { type: object, additionalProperties: true }
+    SearchResponse:
+      type: object
+      required: [project_id, graph_version, query, results]
+      properties:
+        project_id: { type: string }
+        graph_version: { type: string }
+        query: { type: string }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              node_id: { type: string }
+              name: { type: string }
+              file_path: { type: string, nullable: true }
+              summary: { type: string }
+              score: { type: number }
+    QueryResponse:
+      type: object
+      required: [answer, graph_version, evidence]
+      properties:
+        answer: { type: string }
+        graph_version: { type: string }
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              node_id: { type: string }
+              name: { type: string }
+              file_path: { type: string, nullable: true }
+              summary: { type: string }
+              score: { type: number }
+    CompareResponse:
+      type: object
+      required: [base_ref, head_ref, added_node_ids, removed_node_ids, changed_node_ids]
+      properties:
+        base_ref: { type: string }
+        head_ref: { type: string }
+        added_node_ids: { type: array, items: { type: string } }
+        removed_node_ids: { type: array, items: { type: string } }
+        changed_node_ids: { type: array, items: { type: string } }
+        added_edges: { type: array, items: { type: object, additionalProperties: true } }
+        removed_edges: { type: array, items: { type: object, additionalProperties: true } }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { nullable: true }

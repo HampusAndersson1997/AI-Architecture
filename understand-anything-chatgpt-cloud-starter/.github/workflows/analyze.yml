@@ -1,0 +1,78 @@
+name: Analyze repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: Durable project identifier
+        required: true
+        type: string
+      source_type:
+        description: github or upload
+        required: true
+        type: choice
+        options: [github, upload]
+      repository_url:
+        description: Canonical GitHub repository URL for github sources
+        required: false
+        default: ''
+        type: string
+      source_url:
+        description: Expiring Worker download URL for upload sources
+        required: false
+        default: ''
+        type: string
+      source_ref:
+        description: Requested source ref or upload digest
+        required: true
+        type: string
+      source_version:
+        description: Immutable commit SHA or upload digest
+        required: true
+        type: string
+      mode:
+        description: full, incremental, or review
+        required: true
+        type: choice
+        options: [full, incremental, review]
+      callback_url:
+        description: Worker callback endpoint
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ua-${{ inputs.project_id }}-${{ inputs.source_version }}-${{ inputs.mode }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      project_id: ${{ inputs.project_id }}
+      source_type: ${{ inputs.source_type }}
+      repository_url: ${{ inputs.repository_url }}
+      source_url: ${{ inputs.source_url }}
+      source_ref: ${{ inputs.source_ref }}
+      source_version: ${{ inputs.source_version }}
+      mode: ${{ inputs.mode }}
+      callback_url: ${{ inputs.callback_url }}
+      callback_token: ${{ secrets.ANALYZER_CALLBACK_TOKEN }}
+      SOURCE_REPOSITORY_TOKEN: ${{ secrets.SOURCE_REPOSITORY_TOKEN }}
+    steps:
+      - name: Check out analyzer
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run deterministic analysis
+        shell: bash
+        run: bash scripts/run-analysis.sh
